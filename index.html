@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Гладим Хэрин</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        overflow: hidden;
+        position: fixed;
+        touch-action: none;
+      }
+
+      #game-container {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        touch-action: none;
+      }
+
+      .bg-img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain; /* фото не обрезается, целиком помещается на экран */
+        pointer-events: none;
+      }
+
+      #hand {
+        position: absolute;
+        width: 100px;
+        height: auto;
+        pointer-events: none;
+        z-index: 10;
+        display: none;
+      }
+
+      #kittyLogo {
+          position: absolute;
+            top: 2%;
+              left: 50%;
+                transform: translateX(-50%);
+                  width: 40%;
+                    pointer-events: none;
+                      z-index: 5;
+                      }
+      }
+
+      .pulsing {
+        animation: pulse 0.4s infinite alternate ease-in-out;
+      }
+      @keyframes pulse {
+        from {
+          transform: scale(1);
+        }
+        to {
+          transform: scale(1.15);
+        }
+      }
+
+      .sparkle {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        background: radial-gradient(
+          circle,
+          #fff 10%,
+          #ffeb3b 60%,
+          #ff5722 100%
+        );
+        border-radius: 50%;
+        box-shadow: 0 0 10px #ffeb3b;
+        pointer-events: none;
+        z-index: 9;
+        animation: fly 0.8s forwards ease-out;
+      }
+      @keyframes fly {
+        to {
+          transform: translate(var(--mx), var(--my)) scale(0);
+          opacity: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="game-container">
+      <img
+        src="back.png"
+        class="bg-img"
+        id="bgImg"
+        draggable="false"
+        alt="Фон"
+      />
+      <img src="hand.png" id="hand" draggable="false" alt="Ладошка" />
+    </div>
+
+    <img src="kitty.png" id="kittyLogo" draggable="false" alt="Kitty Time" />
+
+    <audio id="mewAudio" src="mewohaerin.mp3" preload="auto"></audio>
+
+    <script>
+      const hand = document.getElementById("hand");
+      const audio = document.getElementById("mewAudio");
+      const container = document.getElementById("game-container");
+      const bgImg = document.getElementById("bgImg");
+
+      let progress = 0;
+      const targetTime = 5000; // 10 секунд глажки
+      let lastTime = 0;
+      let hasPlayed = false;
+
+      // Зоны откалиброваны по реальным координатам:
+      // центр головы Хэрин ~ X:41 Y:25, центр головы игрушки ~ X:77 Y:47
+      const zones = [
+        { x: 25, y: 10, w: 32, h: 30 }, // Голова Хэрин
+        { x: 60, y: 30, w: 30, h: 32 }, // Голова игрушки
+      ];
+
+      // Реальный прямоугольник видимой части фото (без учёта чёрных полей object-fit: contain)
+      function getImageRect() {
+        const cw = window.innerWidth;
+        const ch = window.innerHeight;
+        const iw = bgImg.naturalWidth || cw;
+        const ih = bgImg.naturalHeight || ch;
+        const containerRatio = cw / ch;
+        const imgRatio = iw / ih;
+
+        let width, height, left, top;
+        if (imgRatio > containerRatio) {
+          width = cw;
+          height = cw / imgRatio;
+          left = 0;
+          top = (ch - height) / 2;
+        } else {
+          height = ch;
+          width = ch * imgRatio;
+          top = 0;
+          left = (cw - width) / 2;
+        }
+        return { left, top, width, height };
+      }
+
+      function handleMove(e) {
+        e.preventDefault();
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        hand.style.display = "block";
+        const hw = hand.offsetWidth || 100;
+        const hh = hand.offsetHeight || 100;
+        hand.style.left = clientX - hw / 2 + "px";
+        hand.style.top = clientY - hh / 2 + "px";
+
+        const rect = getImageRect();
+        const relX = clientX - rect.left;
+        const relY = clientY - rect.top;
+
+        if (relX < 0 || relY < 0 || relX > rect.width || relY > rect.height) {
+          hand.classList.remove("pulsing");
+          lastTime = 0;
+          return;
+        }
+
+        const pctX = (relX / rect.width) * 100;
+        const pctY = (relY / rect.height) * 100;
+
+        const isTouchingZone = zones.some((z) => {
+          return (
+            pctX >= z.x && pctX <= z.x + z.w && pctY >= z.y && pctY <= z.y + z.h
+          );
+        });
+
+        if (isTouchingZone) {
+          hand.classList.add("pulsing");
+          if (navigator.vibrate) navigator.vibrate(30);
+
+          const now = performance.now();
+          if (lastTime > 0) {
+            progress += now - lastTime;
+          }
+          lastTime = now;
+
+          if (progress >= targetTime && !hasPlayed) {
+            createSparkles(clientX, clientY);
+            audio.currentTime = 0;
+            audio.play().catch((err) => console.log("Ошибка аудио:", err));
+            hasPlayed = true;
+          }
+        } else {
+          hand.classList.remove("pulsing");
+          lastTime = 0;
+        }
+      }
+
+      function handleEnd() {
+        hand.style.display = "none";
+        hand.classList.remove("pulsing");
+        lastTime = 0;
+        hasPlayed = false;
+        progress = 0;
+      }
+
+      window.addEventListener("touchmove", handleMove, { passive: false });
+      window.addEventListener(
+        "touchstart",
+        (e) => {
+          lastTime = performance.now();
+          handleMove(e);
+        },
+        { passive: false }
+      );
+      window.addEventListener("touchend", handleEnd, { passive: false });
+      window.addEventListener("touchcancel", handleEnd, { passive: false });
+
+      window.addEventListener("mousemove", handleMove);
+      window.addEventListener("mousedown", (e) => {
+        lastTime = performance.now();
+        handleMove(e);
+      });
+      window.addEventListener("mouseup", handleEnd);
+
+      function createSparkles(startX, startY) {
+        for (let i = 0; i < 20; i++) {
+          const s = document.createElement("div");
+          s.className = "sparkle";
+          s.style.left = startX + "px";
+          s.style.top = startY + "px";
+
+          const angle = Math.random() * Math.PI * 2;
+          const distance = 50 + Math.random() * 100;
+          const mx = Math.cos(angle) * distance + "px";
+          const my = Math.sin(angle) * distance + "px";
+
+          s.style.setProperty("--mx", mx);
+          s.style.setProperty("--my", my);
+
+          container.appendChild(s);
+          setTimeout(() => s.remove(), 800);
+        }
+      }
+    </script>
+  </body>
+</html>
